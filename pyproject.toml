@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "a2a-agents-in-production"
+version = "1.0.0"
+description = "Companion code for A2A and Multi-Agent Systems in Production"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Nachiketh Murthy" }]
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff==0.17.3"]
+
+[project.scripts]
+a2asys = "a2asys.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+a2asys = ["data/*.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "examples"]
+
+[tool.ruff]
+line-length = 66
+target-version = "py311"
+src = ["src", "tests", "examples"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+# Data files: long strings read better unbroken.
+"src/a2asys/requests.py" = ["E501"]
+"src/a2asys/store.py" = ["E501"]
+"src/a2asys/cards.py" = ["E501"]
