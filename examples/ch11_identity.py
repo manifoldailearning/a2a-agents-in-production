@@ -21,7 +21,8 @@ def short(challenge: str) -> str:
     if not found:
         return "no credentials"
     words = [x for x in found.groups() if x]
-    return " ".join(words).replace('"', "")
+    detail = " ".join(words).replace('"', "")
+    return detail.replace("scope=", "")
 
 
 def main():
