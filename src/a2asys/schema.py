@@ -30,8 +30,8 @@ def validate(args: dict, schema: dict) -> list[str]:
             rule["pattern"].strip("^$"), str(value)
         ):
             errors.append(
-                f"'{name}' must match {rule['pattern']}, "
-                f"got {value!r}."
+                f"'{name}' must match {rule['pattern']}, got "
+                f"{value!r}."
             )
         if "enum" in rule and value not in rule["enum"]:
             allowed = ", ".join(rule["enum"])

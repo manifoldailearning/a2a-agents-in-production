@@ -48,11 +48,10 @@ WORD_TO_CONCEPT = {
 }
 STOP = set(
     "a an the of for to in on by and or with from this that "
-    "these "
-    "use when which what your their its it is are be can not "
-    "only "
-    "my me i our we you how do does did has have had about "
-    "customer customers please before after been just because "
+    "these use when which what your their its it is are be can "
+    "not only my me i our we you how do does did has have had "
+    "about customer customers please before after been just "
+    "because "
     "full".split()
 )
 

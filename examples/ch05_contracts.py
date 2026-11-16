@@ -37,8 +37,8 @@ def main():
     client = A2AClient(InMemory(server), extensions=(SKILL_EXT,))
     for n, prose in enumerate(
         [
-            "Please refund $60 on order hp 20438, the tent poles "
-            "are missing.",
+            "Please refund $60 on order hp 20438, the tent "
+            "poles are missing.",
             "Refund $60 for #20438, poles missing from the tent.",
         ]
     ):

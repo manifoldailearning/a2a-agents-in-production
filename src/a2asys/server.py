@@ -292,8 +292,7 @@ class AgentServer:
                 raise A2AError(
                     UNSUPPORTED_OPERATION,
                     f"Task {msg['taskId']} is {state} and "
-                    f"accepts "
-                    "no more messages",
+                    "accepts no more messages",
                 )
             rec.task["history"].append(msg)
             self.run(rec, "resume", msg, caller, skill)

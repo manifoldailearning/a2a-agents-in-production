@@ -20,8 +20,7 @@ def main():
         print(
             f"{topology:<9} {s['ok']:>4.0%} {s['right']:>5.0%} "
             f"{s['latency']:>6.1f} {s['hops']:>6.1f} "
-            f"{s['tokens']:>7} "
-            f"{WRITE_ACCESS[topology]:>13}"
+            f"{s['tokens']:>7} {WRITE_ACCESS[topology]:>13}"
         )
 
 

@@ -15,15 +15,14 @@ from a2asys.protocol import USER, message
 def row(name: str, s: dict) -> str:
     return (
         f"{name:<13} {s['ok']:>4.0%} {s['right']:>5.0%} "
-        f"{s['stray']:>6} "
-        f"{s['dupes']:>6} {s['abandoned']:>5} {s['shared']:>7} "
-        f"{s['tokens']:>7}"
+        f"{s['stray']:>6} {s['dupes']:>6} {s['abandoned']:>5} "
+        f"{s['shared']:>7} {s['tokens']:>7}"
     )
 
 
 HEADER = (
-    "step            ok  agent  stray  dupes  left  shared"
-    "  tokens"
+    "step            ok  agent  stray  dupes  left  shared  "
+    "tokens"
 )
 
 

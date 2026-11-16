@@ -210,7 +210,7 @@ class TeamAgent:
             return Outcome(
                 FAILED,
                 f"I could not find the {missing.args[0]} in the "
-                f"request.",
+                "request.",
                 data=(
                     {
                         "reason": "invalid_arguments",
@@ -231,8 +231,7 @@ class TeamAgent:
                 return Outcome(
                     INPUT_REQUIRED,
                     "I still need the item's condition: "
-                    "unopened, "
-                    "like-new, used or damaged.",
+                    "unopened, like-new, used or damaged.",
                 )
             args["condition"] = cond
         return self.run(turn, turn.memo["skill"], args)
@@ -257,14 +256,12 @@ class TeamAgent:
         o = self.store.order(args["orderId"])
         text = (
             f"Order {o['orderId']} ({o['item']}, "
-            f"${o['total']:.2f}) "
-            f"is {o['status']}."
+            f"${o['total']:.2f}) is {o['status']}."
         )
         if o["shipped"]:
             text += (
                 f" Shipped {o['shipped']} with ParcelPath, "
-                f"tracking "
-                f"number {o['trackingNumber']}."
+                f"tracking number {o['trackingNumber']}."
             )
         if o["delivered"]:
             text += f" Delivered {o['delivered']}."
@@ -308,10 +305,9 @@ class TeamAgent:
             return Outcome(
                 AUTH_REQUIRED,
                 "The customer must confirm this address change. "
-                "A "
-                "verification link has been sent to the email on "
-                "the "
-                "order; continue this task once it is confirmed.",
+                "A verification link has been sent to the email "
+                "on the order; continue this task once it is "
+                "confirmed.",
                 data={"reason": "customer_verification"},
             )
         self.store.change_address(
@@ -338,8 +334,8 @@ class TeamAgent:
             return Outcome(
                 INPUT_REQUIRED,
                 "Before I create the return: what condition is "
-                "the "
-                "item in? unopened, like-new, used or damaged.",
+                "the item in? unopened, like-new, used or "
+                "damaged.",
                 data={
                     "needs": ["condition"],
                     "allowed": list(CONDITIONS),
@@ -349,9 +345,8 @@ class TeamAgent:
             o["orderId"], args["condition"], self.key
         )
         text = (
-            f"Return {rma} created for {o['orderId']}. A prepaid "
-            f"label "
-            "has been emailed to the customer."
+            f"Return {rma} created for {o['orderId']}. A "
+            "prepaid label has been emailed to the customer."
         )
         return self.done(
             turn,
@@ -375,8 +370,8 @@ class TeamAgent:
         )
         text = (
             f"Refunded ${args['amount']:.2f} on "
-            f"{args['orderId']} to "
-            f"the original card. Reference {ref}."
+            f"{args['orderId']} to the original card. Reference "
+            f"{ref}."
         )
         return self.done(
             turn,
@@ -395,9 +390,8 @@ class TeamAgent:
         if not drop:
             raise StoreError(
                 "no_price_drop",
-                f"The price of the item on {args['orderId']} has "
-                f"not "
-                "dropped since purchase.",
+                f"The price of the item on {args['orderId']} "
+                "has not dropped since purchase.",
             )
         ref = self.store.refund(
             args["orderId"], drop, "price adjustment", self.key
@@ -421,8 +415,7 @@ class TeamAgent:
         o = self.store.order(args["orderId"])
         text = (
             f"Invoice INV-{o['orderId'][3:]} for {o['orderId']} "
-            f"has been "
-            "emailed to the address on the order."
+            "has been emailed to the address on the order."
         )
         return self.done(
             turn,
@@ -441,8 +434,8 @@ class TeamAgent:
         depot, eta, note = SHIPMENTS[o["orderId"]]
         text = (
             f"Parcel {args['trackingNumber']}: last scan at "
-            f"{depot}. "
-            f"Estimated delivery {eta}. Driver note: {note}"
+            f"{depot}. Estimated delivery {eta}. Driver note: "
+            f"{note}"
         )
         data = {
             "trackingNumber": args["trackingNumber"],
@@ -461,9 +454,8 @@ class TeamAgent:
         turn.memo["orderId"] = o["orderId"]
         return Outcome(
             WORKING,
-            f"Investigation opened for {args['trackingNumber']}. "
-            f"Results "
-            "within two days.",
+            "Investigation opened for "
+            f"{args['trackingNumber']}. Results within two days.",
             ready_at=turn.now + INVESTIGATION_SECONDS,
         )
 

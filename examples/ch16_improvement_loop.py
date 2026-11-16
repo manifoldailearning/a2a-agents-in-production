@@ -23,8 +23,8 @@ def main():
         print(
             f"{cfg.name:<13} {s['ok']:>4.0%} {s['right']:>5.0%} "
             f"{s['stray']:>6} {s['dupes']:>6} "
-            f"{s['abandoned']:>5} "
-            f"{s['shared']:>7} {s['tokens']:>7}"
+            f"{s['abandoned']:>5} {s['shared']:>7} "
+            f"{s['tokens']:>7}"
         )
 
     print("\nproduction failures")
@@ -47,7 +47,7 @@ def main():
     cand = evaluate(PRODUCTION.but(name="fix", edits=FIX))
     ok, why = gate(base, cand)
     print(
-        f"\nwith a lost-parcel example on refund-payment: "
+        "\nwith a lost-parcel example on refund-payment: "
         f"{summarize(cand)['ok']:.0%}, gate "
         f"{'passes' if ok else 'fails'}"
     )

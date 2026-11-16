@@ -4,39 +4,45 @@ from collections import Counter
 
 from a2asys.configs import DEMO, PRODUCTION
 from a2asys.evals import evaluate, run_task, summarize
-from a2asys.requests import BY_ID, REQUESTS
+from a2asys.requests import BY_ID
 
 DEMO_REQUESTS = [BY_ID[t] for t in ("t01", "t27", "t42")]
+ROWS = [
+    ("all 60 requests", "ok", "{:.0%}"),
+    ("right agent first", "right", "{:.0%}"),
+    ("stray side effects", "stray", "{}"),
+    ("duplicate effects", "dupes", "{}"),
+    ("tasks left behind", "abandoned", "{}"),
+    ("details overshared", "shared", "{}"),
+]
 
 
 def main():
-    for cfg in (DEMO, PRODUCTION):
-        ok = [run_task(cfg, r)[1].success for r in DEMO_REQUESTS]
-        print(
-            f"{cfg.name:<11} demo requests passed: {sum(ok)} of 3"
-        )
+    configs = (DEMO, PRODUCTION)
+    grades = {c.name: evaluate(c) for c in configs}
+    summary = {name: summarize(g) for name, g in grades.items()}
 
-    print("\nall sixty requests")
-    print("setup         ok  agent  stray  dupes  left  shared")
-    for cfg in (DEMO, PRODUCTION):
-        s = summarize(evaluate(cfg))
-        print(
-            f"{cfg.name:<11} {s['ok']:>4.0%} {s['right']:>5.0%} "
-            f"{s['stray']:>6} {s['dupes']:>6} "
-            f"{s['abandoned']:>5} "
-            f"{s['shared']:>7}"
-        )
-
-    kinds = Counter(
-        g.type for g in evaluate(DEMO) if not g.success
-    )
-    print("\ndemo failures by request type:")
-    ranked = [f"{t} {n}" for t, n in kinds.most_common()]
-    print("  " + ", ".join(ranked[:6]))
-    print("  " + ", ".join(ranked[6:]))
+    print(f"{'':<22}{'demo':>8}{'production':>12}")
+    passed = [
+        sum(run_task(c, r)[1].success for r in DEMO_REQUESTS)
+        for c in configs
+    ]
     print(
-        f"request types: {len(Counter(r.type for r in REQUESTS))}"
+        f"{'demo requests':<22}{passed[0]:>6}/3{passed[1]:>10}/3"
     )
+    for label, key, fmt in ROWS:
+        a, b = (fmt.format(summary[c.name][key]) for c in configs)
+        print(f"{label:<22}{a:>8}{b:>12}")
+
+    print(f"\n{'by type':<22}{'demo':>8}{'production':>12}")
+    totals = Counter(g.type for g in grades["demo"])
+    for t in sorted(totals):
+        ok = [
+            sum(g.success for g in grades[c.name] if g.type == t)
+            for c in configs
+        ]
+        n = totals[t]
+        print(f"  {t:<20}{ok[0]:>6}/{n}{ok[1]:>10}/{n}")
 
 
 if __name__ == "__main__":

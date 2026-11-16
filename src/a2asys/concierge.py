@@ -270,8 +270,8 @@ class Concierge:
             r = rng("prose", req.id, job.i)
             normalized = r.random() >= self.model.p_raw
         lines = [
-            "Hello, this is the Harbor & Pine support concierge. "
-            f"Please {step.intent}.",
+            "Hello, this is the Harbor & Pine support "
+            f"concierge. Please {step.intent}.",
             f'The customer wrote: "{req.text}"',
         ]
         if normalized and step.args.get("orderId"):
@@ -599,8 +599,7 @@ class Concierge:
             return
         text = (
             "ParcelPath claims desk: customer contact for the "
-            "claim: "
-            f"{cust['email']}, {cust['phone']}."
+            f"claim: {cust['email']}, {cust['phone']}."
         )
         call = Call(
             60 + job.i, "carrier", None, FAILED, extra=True

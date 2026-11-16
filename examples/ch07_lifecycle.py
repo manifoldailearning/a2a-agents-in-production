@@ -94,8 +94,8 @@ def main():
     for cfg in (CONTRACTS, LIFECYCLE):
         s = summarize(evaluate(cfg))
         print(
-            f"{cfg.name:<11} {s['ok']:>4.0%} {s['abandoned']:>5} "
-            f"{s['dupes']:>6}"
+            f"{cfg.name:<11} {s['ok']:>4.0%} "
+            f"{s['abandoned']:>5} {s['dupes']:>6}"
         )
 
 
