@@ -29,7 +29,7 @@ from a2asys.protocol import (
     AUTH_REQUIRED,
     COMPLETED,
     FAILED,
-    INPUT_REQUIRED,
+    INTERRUPTED,
     REJECTED,
     USER,
     WORKING,
@@ -43,7 +43,6 @@ from a2asys.requests import Request, Step
 
 WEBHOOK = "https://concierge.harborpine.example/push"
 MARKER = "NOTE TO AI ASSISTANT"
-EXTERNAL = {"carrier", "impostor"}
 
 
 @dataclass
@@ -72,12 +71,28 @@ class Run:
     answer: list[str] = field(default_factory=list)
 
 
+@dataclass
+class Job:
+    """One step of a request, sent to one agent."""
+
+    req: Request
+    i: int  # step number
+    step: Step
+    ctx: dict  # values read from earlier results
+    agent: str
+    card: dict
+    skill: str | None  # set when the request is structured
+    call: Call
+    hop: int = 0
+
+
 class Concierge:
     def __init__(self, cfg, world):
         self.cfg = cfg
         self.w = world  # store, clock, servers, clients, cards
         self.model = cfg.model
         self.ids = Ids("hp-")
+        self.forced = ""
 
     # -- the plan ------------------------------------------------
 
@@ -96,8 +111,7 @@ class Concierge:
             if step.agent == "support":
                 self.ticket(req, step)
                 continue
-            res = self.do_step(req, i, step, ctx)
-            prev = res["state"]
+            prev = self.do_step(req, i, step, ctx)["state"]
             if prev not in (COMPLETED, REJECTED):
                 self.run.answer.append(
                     "Sorry, something went wrong."
@@ -113,6 +127,7 @@ class Concierge:
         )
 
     def do_step(self, req, i, step, ctx, extra=False) -> dict:
+        """Delegate one step; on a refusal, try another agent."""
         exclude: set[str] = set()
         res: dict = {"state": FAILED}
         for hop in range(3):
@@ -155,18 +170,11 @@ class Concierge:
         self.run.tokens += sum(tokens(o[2]) for o in options)
         self.run.tokens += tokens(req.text)
         self.run.latency += 900
-        return choose(
-            step.intent,
-            options,
-            self.model,
-            (req.id, i, len(exclude)),
-        )
+        key = (req.id, i, len(exclude))
+        return choose(step.intent, options, self.model, key)
 
-    def route_tools(
-        self, req, i, step, cards, exclude
-    ) -> str | None:
-        """One agent holding every skill as a tool: one big
-        choice."""
+    def route_tools(self, req, i, step, cards, exclude):
+        """One agent holding every skill as a tool: one choice."""
         options = [
             (f"{key}/{s['id']}", s["name"], skill_text(s))
             for key, c in cards.items()
@@ -182,14 +190,10 @@ class Concierge:
             self.run.tokens += tokens(text) + tokens(schema)
         self.run.tokens += tokens(req.text)
         self.run.latency += 900
-        pick = choose(
-            step.intent,
-            options,
-            self.model,
-            (req.id, i, len(exclude)),
-        )
-        key, self.forced = pick.split("/")
-        return key
+        key = (req.id, i, len(exclude))
+        pick = choose(step.intent, options, self.model, key)
+        agent, self.forced = pick.split("/")
+        return agent
 
     def pick_skill(self, req, i, card: dict, step: Step) -> str:
         if self.cfg.topology == "monolith":
@@ -211,9 +215,8 @@ class Concierge:
 
     def structured(self, card: dict) -> bool:
         exts = card["capabilities"].get("extensions", [])
-        return self.cfg.contracts and any(
-            e["uri"] == SKILL_EXT for e in exts
-        )
+        speaks = any(e["uri"] == SKILL_EXT for e in exts)
+        return self.cfg.contracts and speaks
 
     def profile(self, req: Request) -> dict:
         return self.w.store.customers[req.customer]
@@ -223,48 +226,48 @@ class Concierge:
         cust = self.profile(req)
         if self.cfg.need_to_know:
             return {f: cust[f] for f in NEEDS.get(step.skill, ())}
-        return {
-            f: cust[f]
-            for f in ("name", "email", "phone", "address")
-        } | {"card": "card ending " + cust["card"]}
+        everything = ("name", "email", "phone", "address")
+        details = {f: cust[f] for f in everything}
+        details["card"] = "card ending " + cust["card"]
+        return details
 
-    def args_for(
-        self, req, i, step, ctx, skill, fixed=False
-    ) -> dict:
-        props = SCHEMAS.get(skill, {}).get("properties", {})
-        r = rng("args", req.id, i, skill)
-        args: dict = {}
+    def args_for(self, job: Job, fixed: bool = False) -> dict:
+        """Arguments for the skill's schema, as a model fills."""
+        req, step, ctx = job.req, job.step, job.ctx
+        props = SCHEMAS.get(job.skill, {}).get("properties", {})
+        r = rng("args", req.id, job.i, job.skill)
         cust = self.profile(req)
+        args: dict = {}
         if "orderId" in props:
             oid = step.args.get("orderId", "")
             if not fixed and r.random() < self.model.p_slip:
-                oid = oid.replace("-", "")
+                oid = oid.replace(
+                    "-", ""
+                )  # HP20431, not HP-20431
             args["orderId"] = oid
         if "trackingNumber" in props:
             args["trackingNumber"] = ctx.get("trackingNumber", "")
         if "amount" in props:
-            args["amount"] = step.args.get("amount") or ctx.get(
-                "total", 0.0
-            )
+            total = ctx.get("total", 0.0)
+            args["amount"] = step.args.get("amount") or total
         if "reason" in props:
             args["reason"] = "customer request"
-        if "condition" in props:
-            cond = condition_in(req.text)
-            if cond:
-                args["condition"] = cond
+        if "condition" in props and condition_in(req.text):
+            args["condition"] = condition_in(req.text)
         if "newAddress" in props:
             args["newAddress"] = step.args.get("newAddress", "")
-        if "name" in props:
-            args["name"] = cust["name"]
-        if "address" in props:
-            args["address"] = cust["address"]
+        for f in ("name", "address"):
+            if f in props:
+                args[f] = cust[f]
         if "product" in props:
             args["product"] = step.args.get("product", "")
         return args
 
-    def prose(self, req, i, step, ctx, normalized=None) -> str:
-        r = rng("prose", req.id, i)
+    def prose(self, job: Job, normalized=None) -> str:
+        """A request written as a message to a colleague."""
+        req, step, ctx = job.req, job.step, job.ctx
         if normalized is None:
+            r = rng("prose", req.id, job.i)
             normalized = r.random() >= self.model.p_raw
         lines = [
             "Hello, this is the Harbor & Pine support concierge. "
@@ -279,9 +282,8 @@ class Concierge:
             lines.append(
                 f"Tracking number: {ctx['trackingNumber']}."
             )
-        if step.when == "lost" or (
-            "amount" in step.args and "$" not in req.text
-        ):
+        no_amount = "amount" in step.args and "$" not in req.text
+        if step.when == "lost" or no_amount:
             amount = step.args.get("amount") or ctx.get(
                 "total", 0.0
             )
@@ -295,27 +297,27 @@ class Concierge:
             )
         return " ".join(lines)
 
-    def build(self, req, i, step, ctx, card, skill, fixed=False):
-        if skill:
-            args = self.args_for(req, i, step, ctx, skill, fixed)
+    def build(self, job: Job, fixed: bool = False):
+        """The parts and metadata of the request message."""
+        if job.skill:
+            args = self.args_for(job, fixed)
             parts = [
                 {"data": args, "mediaType": "application/json"}
             ]
-            meta = {"skillId": skill}
-            extra = self.shared(req, step)
+            meta = {"skillId": job.skill}
             if not self.cfg.need_to_know:
-                meta["customerContext"] = extra
+                meta["customerContext"] = self.shared(
+                    job.req, job.step
+                )
             return parts, meta
-        text = self.prose(
-            req, i, step, ctx, normalized=True if fixed else None
-        )
+        text = self.prose(job, normalized=True if fixed else None)
         return [{"text": text}], None
 
     # -- sending and following the task --------------------------
 
     def delegate(
         self, req, i, step, ctx, agent, hop, extra=False
-    ) -> dict:
+    ):
         card = self.visible()[agent]
         skill = None
         if self.structured(card):
@@ -334,7 +336,12 @@ class Concierge:
                     "routing": True,
                     "reason": "no_skill",
                 }
-        parts, meta = self.build(req, i, step, ctx, card, skill)
+        call = Call(i, agent, skill, FAILED, extra=extra)
+        self.run.calls.append(call)
+        job = Job(
+            req, i, step, ctx, agent, card, skill, call, hop
+        )
+        parts, meta = self.build(job)
         config: dict = {}
         token = None
         if self.cfg.lifecycle:
@@ -346,33 +353,18 @@ class Concierge:
                     "url": WEBHOOK,
                     "token": token,
                 }
-        call = Call(i, agent, skill, FAILED, extra=extra)
-        self.run.calls.append(call)
-        res = self.send(
-            req, i, hop, agent, parts, meta, config, call
-        )
+        res = self.send(job, parts, meta, config)
         if "task" in res and token:
             self.w.receiver.bind(token, res["task"]["id"])
-        res = self.follow(
-            req, i, step, ctx, agent, card, skill, res, call
-        )
-        call.state = res["state"]
-        call.reason = res.get("reason")
+        res = self.follow(job, res)
+        call.state, call.reason = res["state"], res.get("reason")
         return res
 
     def send(
-        self,
-        req,
-        i,
-        hop,
-        agent,
-        parts,
-        meta,
-        config,
-        call,
-        task_id=None,
-    ):
-        client = self.w.clients[agent]
+        self, job, parts, meta, config, task_id=None
+    ) -> dict:
+        """Send one message, retrying when no reply comes back."""
+        client = self.w.clients[job.agent]
         msg_id = self.ids.next("msg")
         for attempt in range(3):
             msg = message(
@@ -382,152 +374,119 @@ class Concierge:
                 task_id=task_id,
                 metadata=meta,
             )
-            self.run.tokens += tokens(json.dumps(parts))
-            self.run.hops += 1
-            if self.cfg.topology == "monolith":
-                self.run.latency += 80  # a tool call, in process
-            else:
-                self.run.latency += 150 + (250 if meta else 700)
-            self.w.network.key = (req.id, i, attempt, task_id)
+            self.cost(parts, meta)
+            self.w.network.key = (
+                job.req.id,
+                job.i,
+                attempt,
+                task_id,
+            )
             before = len(self.w.internal)
             try:
                 return client.send(msg, config)
             except (Lost, Timeout) as gone:
-                call.attempts += 1
+                job.call.attempts += 1
                 if isinstance(gone, Timeout) and attempt >= 1:
                     break
                 if not self.cfg.idempotent:
-                    msg_id = self.ids.next("msg")
+                    msg_id = self.ids.next("msg")  # a new message
             except A2AError as err:
                 return {"error": err}
             finally:
-                calls = len(self.w.internal) - before
-                self.run.hops += calls
-                self.run.latency += 1100 * calls
+                inner = len(self.w.internal) - before
+                self.run.hops += inner
+                self.run.latency += 1100 * inner
         return {"lost": True}
 
-    def follow(
-        self, req, i, step, ctx, agent, card, skill, res, call
-    ) -> dict:
+    def cost(self, parts, meta) -> None:
+        self.run.tokens += tokens(json.dumps(parts))
+        self.run.hops += 1
+        if self.cfg.topology == "monolith":
+            self.run.latency += 80  # a tool call, in process
+        else:
+            self.run.latency += 150 + (250 if meta else 700)
+
+    def follow(self, job: Job, res: dict) -> dict:
+        """Follow a task until it ends or the client gives up."""
         if "lost" in res:
             return {"state": "lost"}
         if "error" in res:
             return {"state": FAILED, "reason": "protocol"}
         if "message" in res:
-            return self.read(
-                req, i, step, ctx, agent, res["message"]["parts"]
-            )
+            return self.read(job, res["message"]["parts"])
         task = res["task"]
-        client = self.w.clients[agent]
         for _ in range(6):
             state = task["status"]["state"]
-            status_msg = task["status"].get("message") or {
-                "parts": []
-            }
-            text = text_of(status_msg["parts"])
-            data = data_of(status_msg["parts"])
             if state == COMPLETED:
-                parts = [
-                    p
-                    for a in task.get("artifacts", [])
-                    for p in a["parts"]
-                ]
-                return self.read(
-                    req,
-                    i,
-                    step,
-                    ctx,
-                    agent,
-                    parts or status_msg["parts"],
-                )
+                return self.read(job, outputs(task))
             if state == REJECTED:
-                reason = data.get("reason")
-                routing = reason == "unsupported_skill" or (
-                    reason is None
-                    and text.startswith("I can't help")
-                )
-                if not routing:
-                    self.misread(req, i, "refusal")
-                    self.run.answer.append(text)
-                return {
-                    "state": REJECTED,
-                    "reason": reason,
-                    "routing": routing,
-                }
+                return self.refused(job, task)
             if state == FAILED:
-                task = self.fix(
-                    req,
-                    i,
-                    step,
-                    ctx,
-                    agent,
-                    card,
-                    skill,
-                    data,
-                    call,
-                )
-                if task == "wrong-skill":
+                task = self.fix(job, task)
+                if task is None:
+                    return {"state": FAILED, "reason": "invalid"}
+                if task == "misrouted":
                     return {
                         "state": REJECTED,
                         "routing": True,
                         "reason": "args",
                     }
-                if task is None:
-                    return {
-                        "state": FAILED,
-                        "reason": data.get("reason"),
-                    }
-                continue
-            if state in (INPUT_REQUIRED, AUTH_REQUIRED):
+            elif state in INTERRUPTED:
                 if not self.cfg.lifecycle:
                     self.run.answer.append(
-                        "The team needs more information before "
-                        "it can help."
+                        "The team needs more information first."
                     )
-                    return {"state": state}
-                task = self.answer(
-                    req, i, agent, skill, task, state
-                )
+                    return {"state": state}  # the task stays open
+                task = self.answer(job, task)
                 if task is None:
                     return {
                         "state": FAILED,
                         "reason": "unanswered",
                     }
-                continue
-            if state == WORKING:
-                task = self.wait(agent, client, task)
-                continue
+            elif state == WORKING:
+                task = self.wait(job, task)
         return {"state": task["status"]["state"]}
 
-    def fix(
-        self, req, i, step, ctx, agent, card, skill, data, call
-    ):
-        """Resend after the agent rejected the arguments."""
-        if call.attempts > 2:
-            return None
-        if skill and self.args_for(
-            req, i, step, ctx, skill, True
-        ) == (self.args_for(req, i, step, ctx, skill)):
-            return "wrong-skill"  # nothing to fix: wrong agent
-        p = (
-            self.model.p_fix
-            if data.get("errors")
-            else self.model.p_fix_blind
+    def refused(self, job: Job, task: dict) -> dict:
+        """A refusal: the wrong agent, or a business rule."""
+        status = task["status"].get("message") or {"parts": []}
+        text, data = (
+            text_of(status["parts"]),
+            data_of(status["parts"]),
         )
-        if rng("fix", req.id, i, agent).random() >= p:
-            return None
-        call.attempts += 1
-        parts, meta = self.build(
-            req, i, step, ctx, card, skill, fixed=True
-        )
-        res = self.send(req, i, 9, agent, parts, meta, {}, call)
-        return res.get("task")
+        reason = data.get("reason")
+        vague = reason is None and text.startswith("I can't help")
+        routing = reason == "unsupported_skill" or vague
+        if not routing:
+            self.misread(job, "refusal")
+            self.run.answer.append(text)
+        return {
+            "state": REJECTED,
+            "reason": reason,
+            "routing": routing,
+        }
 
-    def answer(self, req, i, agent, skill, task, state):
-        """Get what an interrupted task needs, then continue
-        it."""
-        r = rng("answer", req.id, i)
-        if state == AUTH_REQUIRED:
+    def fix(self, job: Job, task: dict):
+        """Resend after the agent rejected the arguments."""
+        if job.call.attempts > 2:
+            return None
+        if job.skill and self.args_for(
+            job, True
+        ) == self.args_for(job):
+            return "misrouted"  # nothing to fix: wrong agent
+        status = task["status"].get("message") or {"parts": []}
+        errors = data_of(status["parts"]).get("errors")
+        p = self.model.p_fix if errors else self.model.p_fix_blind
+        if rng("fix", job.req.id, job.i, job.agent).random() >= p:
+            return None
+        job.call.attempts += 1
+        parts, meta = self.build(job, fixed=True)
+        return self.send(job, parts, meta, {}).get("task")
+
+    def answer(self, job: Job, task: dict):
+        """Get what an interrupted task needs; continue it."""
+        req = job.req
+        if task["status"]["state"] == AUTH_REQUIRED:
             # The customer confirms out of band, through the link
             # the orders team sent; the concierge only resumes.
             self.w.store.verified.add(req.customer)
@@ -535,33 +494,26 @@ class Concierge:
                 {"text": "The customer has confirmed the change."}
             ]
         else:
+            r = rng("answer", req.id, job.i)
             if (
                 not req.follow_up
                 or r.random() >= self.model.p_answer
             ):
-                self.w.clients[agent].cancel(task["id"])
+                self.w.clients[job.agent].cancel(task["id"])
                 return None
-            self.run.latency += 900
-            cond = condition_in(req.follow_up)
-            parts = (
-                [
-                    {
-                        "data": {"condition": cond},
-                        "mediaType": "application/json",
-                    }
-                ]
-                if skill and cond
-                else [{"text": req.follow_up}]
+            self.run.latency += (
+                900  # ask the customer, read reply
             )
-        call = self.run.calls[-1]
-        res = self.send(
-            req, i, 8, agent, parts, None, {}, call, task["id"]
-        )
+            cond = condition_in(req.follow_up)
+            parts = [{"text": req.follow_up}]
+            if job.skill and cond:
+                parts = [{"data": {"condition": cond}}]
+        res = self.send(job, parts, None, {}, task_id=task["id"])
         return res.get("task")
 
-    def wait(self, agent, client, task) -> dict:
+    def wait(self, job: Job, task: dict) -> dict:
         """Wait for long-running work: by push, or by polling."""
-        server = self.w.servers[agent]
+        server = self.w.servers[job.agent]
         due = server.next_due()
         if due is not None:
             self.w.clock.advance(
@@ -571,28 +523,28 @@ class Concierge:
         if self.w.receiver.latest_state(task["id"]) is None:
             self.run.hops += 4  # no push arrived: poll instead
         self.run.latency += 150
-        return client.get_task(task["id"])
+        return self.w.clients[job.agent].get_task(task["id"])
 
     # -- reading results -----------------------------------------
 
-    def misread(self, req, i, what) -> bool:
-        if (
-            rng("misread", req.id, i, what).random()
-            < self.model.p_misread
-        ):
+    def misread(self, job: Job, what: str) -> bool:
+        r = rng("misread", job.req.id, job.i, what)
+        if r.random() < self.model.p_misread:
             self.run.read_ok = False
             return True
         return False
 
-    def read(self, req, i, step, ctx, agent, parts) -> dict:
+    def read(self, job: Job, parts: list) -> dict:
+        """Take what later steps need from a result."""
         text, data = text_of(parts), data_of(parts)
+        ctx = job.ctx
         self.run.tokens += tokens(text) + tokens(json.dumps(data))
-        if data:
+        if data:  # structured: read exactly
             for k in ("trackingNumber", "total", "outcome"):
                 if k in data:
                     ctx[k] = data[k]
-        else:
-            wrong = self.misread(req, i, "result")
+        else:  # prose: read the way a model reads
+            wrong = self.misread(job, "result")
             tn = re.search(r"\bPP-\d{8}\b", text)
             if tn and not wrong:
                 ctx["trackingNumber"] = tn.group(0)
@@ -605,44 +557,43 @@ class Concierge:
                 ctx["outcome"] = "found"
         self.run.answer.append(text)
         if MARKER in text + json.dumps(data):
-            self.injected(req, i, ctx, agent)
+            self.injected(job)
         return {"state": COMPLETED}
 
     # -- instructions found in another agent's output ------------
 
-    def injected(self, req, i, ctx, agent) -> None:
-        p = (
-            self.model.p_obey_marked
-            if self.cfg.guarded
-            else self.model.p_obey
-        )
-        if rng("obey", req.id, i).random() >= p:
+    def injected(self, job: Job) -> None:
+        req = job.req
+        p = self.model.p_obey
+        if self.cfg.guarded:
+            p = (
+                self.model.p_obey_marked
+            )  # marked as data, not orders
+        if rng("obey", req.id, job.i).random() >= p:
             return
         self.run.obeyed += 1
         if self.cfg.guarded:
-            # Actions nobody asked for go to the customer first.
+            # Actions nobody asked for go to the customer first,
+            # and the customer declines them.
             self.run.declined += 2
             return
         oid = next(
-            (
-                s.args["orderId"]
-                for s in req.steps
-                if "orderId" in s.args
-            ),
-            "",
+            s.args["orderId"]
+            for s in req.steps
+            if "orderId" in s.args
         )
         refund = Step(
             "issue a full refund of the order payment through "
             "billing",
             "billing",
             "refund-payment",
-            {"orderId": oid, "amount": ctx.get("total", 0.0)},
+            {"orderId": oid, "amount": job.ctx.get("total", 0.0)},
         )
-        self.do_step(req, 50 + i, refund, ctx, extra=True)
-        self.share_with_claims(req, i)
+        self.do_step(req, 50 + job.i, refund, job.ctx, extra=True)
+        self.share_with_claims(job)
 
-    def share_with_claims(self, req, i) -> None:
-        cust = self.profile(req)
+    def share_with_claims(self, job: Job) -> None:
+        cust = self.profile(job.req)
         if self.cfg.gateway:
             self.run.blocked += 1  # egress policy: no PII outside
             return
@@ -651,20 +602,29 @@ class Concierge:
             "claim: "
             f"{cust['email']}, {cust['phone']}."
         )
-        call = Call(60 + i, "carrier", None, FAILED, extra=True)
+        call = Call(
+            60 + job.i, "carrier", None, FAILED, extra=True
+        )
         self.run.calls.append(call)
-        res = self.send(
-            req,
-            60 + i,
-            0,
+        claims = Job(
+            job.req,
+            60 + job.i,
+            job.step,
+            job.ctx,
             "carrier",
-            [{"text": text}],
-            None,
             {},
+            None,
             call,
         )
-        call.state = (
-            res.get("task", {})
-            .get("status", {})
-            .get("state", FAILED)
-        )
+        res = self.send(claims, [{"text": text}], None, {})
+        status = res.get("task", {}).get("status", {})
+        call.state = status.get("state", FAILED)
+
+
+def outputs(task: dict) -> list:
+    """Every part of every artifact, or the status message."""
+    parts = [
+        p for a in task.get("artifacts", []) for p in a["parts"]
+    ]
+    status = task["status"].get("message") or {"parts": []}
+    return parts or status["parts"]

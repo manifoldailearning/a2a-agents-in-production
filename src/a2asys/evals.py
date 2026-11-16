@@ -219,8 +219,7 @@ class Grade:
 
 
 def required(req: Request):
-    """The plan's steps that should run, given the true
-    outcomes."""
+    """The plan's steps that should run, given the truth."""
     prev_rejected = False
     for i, step in enumerate(req.steps):
         if step.when == "rejected" and not prev_rejected:

@@ -1,5 +1,4 @@
-"""Command line: run the ladder, one configuration, or one
-agent."""
+"""Command line: the ladder, one configuration, one agent."""
 
 from __future__ import annotations
 

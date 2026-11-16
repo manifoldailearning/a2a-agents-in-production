@@ -1,5 +1,4 @@
-"""The ladder: from a demo setup to production, one change a
-step."""
+"""The ladder: from demo to production, one change a step."""
 
 from __future__ import annotations
 

@@ -84,8 +84,7 @@ class Gateway:
     def personal_data(
         self, message: dict, skill: str | None
     ) -> set:
-        """Customer fields in a message that its skill does not
-        need."""
+        """Customer fields a message carries but does not need."""
         blob = (
             text_of(message["parts"])
             + " "

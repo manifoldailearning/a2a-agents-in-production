@@ -155,8 +155,7 @@ class AgentServer:
     def handle(
         self, rpc: dict, headers: dict
     ) -> tuple[dict, dict]:
-        """Answer one JSON-RPC request; return (reply,
-        headers)."""
+        """Answer one JSON-RPC request: (reply, headers)."""
         rid = rpc.get("id")
         headers = {k.lower(): v for k, v in headers.items()}
         try:
@@ -523,8 +522,7 @@ class AgentServer:
     def events_since(
         self, task_id: str, start: int
     ) -> list[dict]:
-        """Events a stream has not delivered yet (for
-        transports)."""
+        """Events a stream has not delivered yet."""
         return list(self.tasks[task_id].events[start:])
 
     # -- push notifications --------------------------------------

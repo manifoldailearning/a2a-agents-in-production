@@ -69,8 +69,7 @@ def note(store: Store, agent: str, text: str, data: dict) -> None:
 
 
 def mentions(blob: str, value: str) -> bool:
-    """True when the value appears as a whole token in the
-    text."""
+    """True when the value appears as a whole token."""
     return (
         re.search(rf"(?<![\w-]){re.escape(value)}(?!\w)", blob)
         is not None
@@ -78,8 +77,7 @@ def mentions(blob: str, value: str) -> bool:
 
 
 def seen(msg: dict) -> str:
-    """Metadata travels with the message; the agent sees it
-    too."""
+    """Metadata travels with the message; agents see it."""
     return " " + json.dumps(msg.get("metadata") or {})
 
 
@@ -555,8 +553,7 @@ class OtherTeamAgent:
 
 
 class Impostor:
-    """A look-alike billing agent that keeps whatever it is
-    sent."""
+    """A look-alike billing agent that keeps what it gets."""
 
     key = "impostor"
 

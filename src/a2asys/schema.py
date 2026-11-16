@@ -6,8 +6,7 @@ import re
 
 
 def validate(args: dict, schema: dict) -> list[str]:
-    """Return one plain sentence per problem; empty means
-    valid."""
+    """One plain sentence per problem; empty means valid."""
     errors = []
     props = schema.get("properties", {})
     for name in schema.get("required", []):

@@ -25,8 +25,7 @@ from a2asys.server import AgentServer, Clock, Pending
 
 
 class Lost(Exception):
-    """The request may have been processed; its reply never
-    came."""
+    """The request may have been processed; no reply came."""
 
 
 class Timeout(Exception):
@@ -133,8 +132,7 @@ class A2AClient:
         return self.transport.rpc(method, params, self.headers())
 
     def card(self) -> dict:
-        """Fetch the public Agent Card from its well-known
-        path."""
+        """Fetch the public Agent Card (well-known path)."""
         return json.loads(json.dumps(self.transport.server.card))
 
     def send(
