@@ -75,17 +75,14 @@ class Traced:
             _, trace_id, parent_id, _ = parent.split("-")
         reply, extra = self.server.handle(rpc, headers)
         result = reply.get("result") or {}
-        task = result.get("task") or (
-            result if "status" in result else {}
-        )
+        task = result.get("task") or result
         state = task.get("status", {}).get("state", "")
         if "message" in result:
             state = "MESSAGE"
         if "error" in reply:
             state = f"ERROR {reply['error']['code']}"
-        meta = (
-            (rpc.get("params") or {}).get("message") or {}
-        ).get("metadata") or {}
+        params = rpc.get("params") or {}
+        meta = (params.get("message") or {}).get("metadata") or {}
         r = rng("ms", self.agent, trace_id, self.tracer.n)
         ms = LATENCY.get(self.agent, 200) * (0.6 + r.random())
         if r.random() < 0.05:

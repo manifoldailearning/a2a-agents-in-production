@@ -120,7 +120,7 @@ class PushReceiver:
         )
         task_id = update.get("taskId") or update.get("id", "")
         token = headers.get(TOKEN_HEADER, "")
-        known = token in self.tokens and any(
+        known = any(
             hmac.compare_digest(token, t) for t in self.tokens
         )
         bound = self.tokens.get(token)

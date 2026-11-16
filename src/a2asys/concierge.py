@@ -375,12 +375,9 @@ class Concierge:
                 metadata=meta,
             )
             self.cost(parts, meta)
-            self.w.network.key = (
-                job.req.id,
-                job.i,
-                attempt,
-                task_id,
-            )
+            # The same request meets the same network every run.
+            key = (job.req.id, job.i, attempt, task_id)
+            self.w.network.key = key
             before = len(self.w.internal)
             try:
                 return client.send(msg, config)
@@ -501,9 +498,8 @@ class Concierge:
             ):
                 self.w.clients[job.agent].cancel(task["id"])
                 return None
-            self.run.latency += (
-                900  # ask the customer, read reply
-            )
+            # Ask the customer, then read the reply.
+            self.run.latency += 900
             cond = condition_in(req.follow_up)
             parts = [{"text": req.follow_up}]
             if job.skill and cond:
@@ -566,9 +562,8 @@ class Concierge:
         req = job.req
         p = self.model.p_obey
         if self.cfg.guarded:
-            p = (
-                self.model.p_obey_marked
-            )  # marked as data, not orders
+            # Marked as data from another agent, not as orders.
+            p = self.model.p_obey_marked
         if rng("obey", req.id, job.i).random() >= p:
             return
         self.run.obeyed += 1

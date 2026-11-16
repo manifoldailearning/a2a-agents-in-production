@@ -51,13 +51,12 @@ class Gateway:
         request_id: str,
         **cfg,
     ):
+        meta = message.get("metadata") or {}
         entry = {
             "request": request_id,
             "caller": caller,
             "agent": agent,
-            "skill": (message.get("metadata") or {}).get(
-                "skillId"
-            ),
+            "skill": meta.get("skillId"),
         }
         self.audit.append(entry)
         if agent not in self.policy.allow.get(caller, set()):

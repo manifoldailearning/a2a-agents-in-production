@@ -81,9 +81,6 @@ class Model:
     noise_per_item: float = 0.03  # more choices, more confusion
     p_raw: float = 0.5  # pass the user's words on unchanged
     p_parse_text: float = 0.8  # read an id from free text
-    p_parse_raw: float = (
-        0.55  # same, when the user wrote it oddly
-    )
     p_slip: float = 0.03  # misformat structured arguments
     p_fix: float = 0.9  # fix arguments after a structured error
     p_fix_blind: float = 0.3  # same, after a prose error
@@ -102,7 +99,6 @@ LARGE = Model(
     noise_per_item=0.018,
     p_raw=0.3,
     p_parse_text=0.9,
-    p_parse_raw=0.7,
     p_misread=0.06,
     p_obey=0.25,
 )
